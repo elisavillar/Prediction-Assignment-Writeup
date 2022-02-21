@@ -1,0 +1,113 @@
+---
+title: "Prediction Project Write Up"
+author: "Elisa Villar"
+date: "21/02/2022"
+output: html_document
+---
+
+### **Background**
+
+Using devices such as _Jawbone Up_, _Nike FuelBand_, and _Fitbit_ it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how _much_ of a particular activity they do, but they rarely quantify _how well they do it_. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: [http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset).
+
+### **Data**
+
+The training data for this project are available here:
+
+[](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+
+The test data are available here:
+
+[](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+
+### Summary
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+### Method selected
+
+The Random Forest was the method selected, because it automatically selects important variables and is robust to correlated covariates & outliers in general.
+
+The Confusion Matrix achieved *99.6% accuracy*. The Out of Sample Error achieved *99.7449%*.
+
+```{r, cache = TRUE}
+library(ggplot2)
+library(caret)
+library(randomForest)
+library(e1071)
+library(gbm)
+library(doParallel)
+library(survival)
+library(splines)
+library(plyr)
+
+# load data
+training <- read.csv("dataset_training.csv", na.strings=c("#DIV/0!"), row.names = 1)
+testing <- read.csv("dataset_testing.csv", na.strings=c("#DIV/0!"), row.names = 1)
+training <- training[, 6:dim(training)[2]]
+
+treshold <- dim(training)[1] * 0.95
+
+#Remove columns with more than 95% of NA or "" values
+goodColumns <- !apply(training, 2, function(x) sum(is.na(x)) > treshold  || sum(x=="") > treshold)
+
+training <- training[, goodColumns]
+
+badColumns <- nearZeroVar(training, saveMetrics = TRUE)
+
+training <- training[, badColumns$nzv==FALSE]
+
+training$classe = factor(training$classe)
+
+#Partition rows into training and crossvalidation
+inTrain <- createDataPartition(training$classe, p = 0.6)[[1]]
+crossv <- training[-inTrain,]
+training <- training[ inTrain,]
+inTrain <- createDataPartition(crossv$classe, p = 0.75)[[1]]
+crossv_test <- crossv[ -inTrain,]
+crossv <- crossv[inTrain,]
+
+testing <- testing[, 6:dim(testing)[2]]
+testing <- testing[, goodColumns]
+testing$classe <- NA
+testing <- testing[, badColumns$nzv==FALSE]
+
+#Train model
+mod1 <- train(classe ~ ., data=training, method="rf")
+
+pred1 <- predict(mod1, crossv)
+
+#show confusion matrices
+confusionMatrix(pred1, crossv$classe)
+
+#out-of-sample error
+pred1 <- predict(mod1, crossv_test)
+
+accuracy <- sum(pred1 == crossv_test$classe) / length(pred1)
+
+varImpRF <- train(classe ~ ., data = training, method = "rf")
+varImpObj <- varImp(varImpRF)
+
+# Top 40 plot
+plot(varImpObj, main = "Importance of Top 40 Variables", top = 40)
+
+# Top 25 plot
+plot(varImpObj, main = "Importance of Top 25 Variables", top = 25)
+
+pml_write_files = function(x){
+n = length(x)
+for(i in 1:n){
+filename = paste0("problem_id_",i,".txt")
+write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+}
+}
+x <- testing
+
+answers <- predict(mod1, newdata=x)
+answers
+
+pml_write_files(answers)
+
+```
+
+
